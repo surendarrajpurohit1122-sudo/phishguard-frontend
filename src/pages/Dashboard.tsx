@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
@@ -7,10 +8,11 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Globe, Mail, GraduationCap, BarChart3 } from "lucide-react";
+import { Globe, Mail, GraduationCap, BarChart3, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { dashboardAPI } from "../services/api";
 
-const chartData = [
+const mockChartData = [
   { name: "Mon", scans: 45, threats: 12 },
   { name: "Tue", scans: 52, threats: 8 },
   { name: "Wed", scans: 38, threats: 15 },
@@ -20,24 +22,23 @@ const chartData = [
   { name: "Sun", scans: 30, threats: 7 },
 ];
 
-const stats = [
-  { label: "Total Scans Today", value: "1,284", color: "text-primary", sub: "+12% from yesterday" },
-  { label: "Threats Detected", value: "42", color: "text-danger", sub: "Critical severity" },
-  { label: "Emails Analyzed", value: "856", color: "text-warning", sub: "24 flagged for review" },
-  { label: "Avg Quiz Score", value: "92%", color: "text-success", sub: "Top 10% of industry" },
+const mockStats = [
+  { label: "Total Scans Today", value: "0", color: "text-primary", sub: "Loading" },
+  { label: "Threats Detected", value: "0", color: "text-danger", sub: "Loading" },
+  { label: "Emails Analyzed", value: "0", color: "text-warning", sub: "Loading" },
+  { label: "Avg Quiz Score", value: "0%", color: "text-success", sub: "Loading" },
 ];
 
-const threats = [
+const mockThreats = [
   { type: "Phishing", source: "https://secure-login-bank.xyz/auth", severity: "Critical", time: "2 min ago", status: "Blocked" },
   { type: "Malware", source: "https://free-download.malware.net/setup", severity: "High", time: "15 min ago", status: "Blocked" },
-  { type: "Spoofing", source: "support@paypa1-security.com", severity: "Medium", time: "1 hr ago", status: "Flagged" },
-  { type: "Phishing", source: "https://amaz0n-verify.co/login", severity: "Critical", time: "2 hr ago", status: "Blocked" },
 ];
 
 const severityColor: Record<string, string> = {
   Critical: "bg-danger",
   High: "bg-warning",
   Medium: "bg-primary",
+  Low: "bg-success"
 };
 
 const quickActions = [
@@ -48,11 +49,68 @@ const quickActions = [
 ];
 
 export default function Dashboard() {
+  const [statsData, setStatsData] = useState<any>(null);
+  const [threatsList, setThreatsList] = useState<any[]>([]);
+  const [chartDataList, setChartDataList] = useState<any[]>(mockChartData);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [statsRes, threatsRes] = await Promise.all([
+          dashboardAPI.stats(),
+          dashboardAPI.threats()
+        ]);
+        setStatsData(statsRes);
+        if (statsRes.trend) setChartDataList(statsRes.trend);
+        setThreatsList(threatsRes && threatsRes.length > 0 ? threatsRes : mockThreats);
+      } catch (err: any) {
+        console.warn("Using mock data due to API error:", err);
+        setError("API connecting... Using offline mode data.");
+        setChartDataList(mockChartData);
+        setThreatsList(mockThreats);
+        setStatsData({
+          totalScansToday: 1284,
+          threatsDetected: 42,
+          emailsAnalyzed: 856,
+          avgQuizScore: 92
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  const displayStats = statsData ? [
+    { label: "Total Scans Today", value: statsData.totalScansToday.toString(), color: "text-primary", sub: "Based on active logs" },
+    { label: "Threats Detected", value: statsData.threatsDetected.toString(), color: "text-danger", sub: "Critical severity" },
+    { label: "Emails Analyzed", value: statsData.emailsAnalyzed.toString(), color: "text-warning", sub: "Through Deep Scan" },
+    { label: "Avg Quiz Score", value: `${statsData.avgQuizScore}%`, color: "text-success", sub: "Employee awareness" },
+  ] : mockStats;
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[500px] space-y-4">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="font-mono text-sm text-muted-foreground">Connecting to API Engine...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {error && (
+        <div className="bg-warning/10 border border-warning/30 p-4 rounded-lg text-warning text-sm font-mono flex items-center justify-between">
+          <span>{error}</span>
+          <span className="text-[10px] uppercase bg-warning/20 px-2 py-1 rounded text-warning">Offline Mode</span>
+        </div>
+      )}
+
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((s) => (
+        {displayStats.map((s) => (
           <div key={s.label} className="bg-card border border-border p-5 rounded-lg hover:border-primary/50 transition-all">
             <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">{s.label}</p>
             <h3 className={`text-3xl font-display font-bold ${s.color}`}>{s.value}</h3>
@@ -67,7 +125,7 @@ export default function Dashboard() {
           <h3 className="font-display mb-6 text-sm">Threat Activity (7 Days)</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
+              <BarChart data={chartDataList}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(222 47% 20%)" vertical={false} />
                 <XAxis dataKey="name" stroke="hsl(215 20% 55%)" fontSize={12} />
                 <YAxis stroke="hsl(215 20% 55%)" fontSize={12} />
@@ -122,7 +180,7 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="text-sm">
-              {threats.map((t, i) => (
+              {threatsList.map((t, i) => (
                 <tr key={i} className="border-b border-border hover:bg-foreground/5 transition-colors">
                   <td className="px-6 py-4">
                     <span className="px-2 py-1 bg-danger/10 text-danger text-[10px] font-bold rounded border border-danger/20 uppercase">
@@ -136,9 +194,9 @@ export default function Dashboard() {
                       <span className="text-xs">{t.severity}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-xs text-muted-foreground font-mono">{t.time}</td>
+                  <td className="px-6 py-4 text-xs text-muted-foreground font-mono">{t.time || t.detectedAt}</td>
                   <td className="px-6 py-4">
-                    <span className="text-xs text-muted-foreground italic">{t.status}</span>
+                    <span className="text-xs text-muted-foreground italic">{t.status || "Logged"}</span>
                   </td>
                 </tr>
               ))}

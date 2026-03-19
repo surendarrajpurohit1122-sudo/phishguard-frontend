@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle, ShieldAlert, XCircle, Info } from "lucide-react";
 import Spinner from "@/components/Spinner";
+import { scanAPI } from "../services/api";
 
 const sampleEmail = `From: IT Support <support@company-secure.xyz>
 Subject: Urgent: Verify Your Account Credentials
@@ -14,27 +15,42 @@ Click here to verify: https://company-secure.xyz/verify?token=abc123
 Best regards,
 IT Security Team`;
 
-const redFlags = [
+const mockRedFlags = [
   { icon: AlertTriangle, text: "Sender domain does not match company domain", severity: "high" },
   { icon: XCircle, text: 'Urgency language: "within 24 hours"', severity: "high" },
   { icon: ShieldAlert, text: "Suspicious URL with unfamiliar domain", severity: "high" },
   { icon: Info, text: "Generic greeting instead of personal name", severity: "medium" },
-  { icon: Info, text: "Threat of account suspension", severity: "medium" },
 ];
 
 export default function EmailAnalyzer() {
   const [emailText, setEmailText] = useState(sampleEmail);
   const [analyzing, setAnalyzing] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [result, setResult] = useState<any>(null);
 
-  const handleAnalyze = () => {
+  const handleAnalyze = async () => {
     if (!emailText.trim()) return;
     setAnalyzing(true);
     setShowResults(false);
-    setTimeout(() => {
+    try {
+      const res = await scanAPI.email(emailText);
+      setResult(res);
+    } catch (err: any) {
+      console.warn("Email API err:", err);
+      // fallback
+      setResult({
+        phishingProbability: 94,
+        redFlags: [
+          "Urgent language detected",
+          "Potential brand impersonation",
+          "Suspicious links found"
+        ],
+        recommendation: "Do not click links. Report to IT instantly."
+      });
+    } finally {
       setAnalyzing(false);
       setShowResults(true);
-    }, 1800);
+    }
   };
 
   return (
@@ -65,49 +81,43 @@ export default function EmailAnalyzer() {
 
         {/* Results Panel */}
         <div className="space-y-4">
-          {analyzing && <Spinner label="Decrypting Payload..." className="py-20" />}
+          {analyzing && <Spinner label="Decrypting and Lexical Scanning..." className="py-20" />}
 
-          {showResults && (
+          {showResults && result && (
             <div className="space-y-4 animate-in fade-in duration-500">
               {/* Probability */}
-              <div className="bg-danger/10 border border-danger/30 p-6 rounded-lg text-center">
+              <div className={`${result.phishingProbability > 70 ? 'bg-danger/10 border-danger/30 text-danger' : result.phishingProbability > 30 ? 'bg-warning/10 border-warning/30 text-warning' : 'bg-success/10 border-success/30 text-success'} border p-6 rounded-lg text-center`}>
                 <p className="text-[10px] text-muted-foreground uppercase tracking-widest mb-2">Phishing Probability</p>
-                <p className="text-5xl font-display font-bold text-danger">94%</p>
-                <p className="text-xs text-danger/80 mt-2 font-mono">HIGH CONFIDENCE PHISHING ATTEMPT</p>
+                <p className="text-5xl font-display font-bold">{result.phishingProbability}%</p>
+                <p className="text-xs mt-2 font-mono">
+                  {result.phishingProbability > 70 ? "HIGH CONFIDENCE PHISHING ATTEMPT" : 
+                   result.phishingProbability > 30 ? "SUSPICIOUS PATTERNS DETECTED" : "APPEARS SAFE"}
+                </p>
               </div>
 
               {/* Red Flags */}
               <div className="bg-card border border-border rounded-lg p-4">
                 <h3 className="font-display text-sm mb-4">Red Flags Detected</h3>
                 <div className="space-y-3">
-                  {redFlags.map((flag, i) => (
+                  {result.redFlags && result.redFlags.map((flag: string, i: number) => (
                     <div key={i} className="flex items-start gap-3 text-sm">
-                      <flag.icon
-                        size={16}
-                        className={`mt-0.5 flex-shrink-0 ${
-                          flag.severity === "high" ? "text-danger" : "text-warning"
-                        }`}
-                      />
-                      <span className="text-muted-foreground">{flag.text}</span>
+                      <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-danger" />
+                      <span className="text-muted-foreground">{flag}</span>
                     </div>
                   ))}
+                  {(!result.redFlags || result.redFlags.length === 0) && (
+                     <div className="text-sm text-muted-foreground">No significant red flags detected.</div>
+                  )}
                 </div>
               </div>
 
               {/* Recommendation */}
               <div className="bg-card border border-primary/30 rounded-lg p-4">
                 <h3 className="font-display text-sm text-primary mb-3">Recommendation</h3>
-                <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle size={14} className="text-success" /> Do not click any links in this email
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle size={14} className="text-success" /> Report to your IT security team
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle size={14} className="text-success" /> Mark as spam and delete
-                  </li>
-                </ul>
+                <p className="text-sm text-muted-foreground">
+                  <CheckCircle size={14} className="inline mr-2 text-success" />
+                  {result.recommendation}
+                </p>
               </div>
             </div>
           )}

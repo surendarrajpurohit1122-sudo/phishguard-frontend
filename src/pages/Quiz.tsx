@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { BookOpen, CheckCircle, XCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { BookOpen, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { quizAPI } from "../services/api";
 
 const modules = [
   { title: "Phishing Fundamentals", desc: "Learn to identify common phishing attacks", progress: 100, questions: 12 },
@@ -7,45 +8,45 @@ const modules = [
   { title: "Advanced Threat Detection", desc: "Detect sophisticated attack patterns", progress: 0, questions: 10 },
 ];
 
-const questions = [
+const mockQuestions = [
   {
-    q: 'You receive an email from "IT Support" asking you to click a link to validate your SSO credentials. What should you check first?',
+    question: 'You receive an email from "IT Support" asking you to click a link to validate your SSO credentials. What should you check first?',
     options: [
       "The sender's actual email address domain",
       "The urgency of the language used",
       "If the link uses HTTPS",
       "All of the above",
     ],
-    correct: 0,
+    correctIndex: 0,
   },
   {
-    q: "Which of the following is a strong indicator of a phishing URL?",
+    question: "Which of the following is a strong indicator of a phishing URL?",
     options: [
       "The URL uses HTTPS",
       "The domain contains misspelled brand names",
       "The website loads quickly",
       "The page has a modern design",
     ],
-    correct: 1,
+    correctIndex: 1,
   },
   {
-    q: "What is 'spear phishing'?",
+    question: "What is 'spear phishing'?",
     options: [
       "Sending malware via USB drives",
       "Mass email campaigns to random users",
       "Targeted attacks using personal information",
       "Phishing through phone calls",
     ],
-    correct: 2,
+    correctIndex: 2,
   },
 ];
 
-const leaderboard = [
-  { name: "Sarah Chen", dept: "Engineering", score: 980 },
-  { name: "Marcus Wright", dept: "Sales", score: 945 },
-  { name: "Elena Rodriguez", dept: "HR", score: 910 },
-  { name: "James Kim", dept: "Finance", score: 875 },
-  { name: "Priya Patel", dept: "Marketing", score: 840 },
+const mockLeaderboard = [
+  { name: "Sarah Chen", department: "Engineering", percentage: 98 },
+  { name: "Marcus Wright", department: "Sales", percentage: 94 },
+  { name: "Elena Rodriguez", department: "HR", percentage: 91 },
+  { name: "James Kim", department: "Finance", percentage: 87 },
+  { name: "Priya Patel", department: "Marketing", percentage: 84 },
 ];
 
 export default function Quiz() {
@@ -56,19 +57,62 @@ export default function Quiz() {
   const [score, setScore] = useState(0);
   const [finished, setFinished] = useState(false);
 
+  const [dbQuestions, setDbQuestions] = useState<any[]>(mockQuestions);
+  const [dbLeaderboard, setDbLeaderboard] = useState<any[]>(mockLeaderboard);
+  const [loading, setLoading] = useState(true);
+  const [userAnswers, setUserAnswers] = useState<number[]>([]);
+  const [quizResult, setQuizResult] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchInit = async () => {
+      try {
+        const [qRes, lRes] = await Promise.all([
+          quizAPI.questions(),
+          quizAPI.leaderboard().catch(() => null)
+        ]);
+        if (qRes && qRes.length > 0) setDbQuestions(qRes);
+        if (lRes && lRes.length > 0) setDbLeaderboard(lRes);
+      } catch (err) {
+        console.warn("Quiz API err:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInit();
+  }, []);
+
   const handleSelect = (idx: number) => {
     if (answered) return;
     setSelected(idx);
     setAnswered(true);
-    if (idx === questions[currentQ].correct) setScore((s) => s + 1);
+    
+    setUserAnswers((prev) => {
+      const newAns = [...prev];
+      newAns[currentQ] = idx;
+      return newAns;
+    });
+
+    const isCorrect = dbQuestions[currentQ].correctIndex === idx || dbQuestions[currentQ].correct === idx;
+    if (isCorrect) {
+      setScore((s) => s + 1);
+    }
   };
 
-  const handleNext = () => {
-    if (currentQ < questions.length - 1) {
+  const handleNext = async () => {
+    if (currentQ < dbQuestions.length - 1) {
       setCurrentQ((c) => c + 1);
       setSelected(null);
       setAnswered(false);
     } else {
+      try {
+        const result = await quizAPI.submit(userAnswers);
+        setQuizResult(result);
+        const lRes = await quizAPI.leaderboard();
+        if (lRes) setDbLeaderboard(lRes);
+      } catch (err) {
+        console.warn(err);
+        setQuizResult({ score, total: dbQuestions.length, percentage: Math.round((score/dbQuestions.length)*100), badge: "Security Aware" });
+      }
       setFinished(true);
     }
   };
@@ -80,12 +124,19 @@ export default function Quiz() {
     setAnswered(false);
     setScore(0);
     setFinished(false);
+    setUserAnswers([]);
+    setQuizResult(null);
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-2 space-y-6">
-        {!activeQuiz ? (
+        {loading ? (
+           <div className="flex flex-col items-center justify-center min-h-[400px]">
+             <Loader2 className="animate-spin text-primary w-8 h-8 mb-4" />
+             <p className="text-sm font-mono text-muted-foreground">Loading Quiz Modules...</p>
+           </div>
+        ) : !activeQuiz ? (
           <>
             <h1 className="text-3xl font-display font-extrabold tracking-tighter">Security Awareness Training</h1>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -116,35 +167,36 @@ export default function Quiz() {
             </div>
           </>
         ) : finished ? (
-          <div className="bg-card border border-border p-8 rounded-lg text-center space-y-6">
-            <h2 className="text-2xl font-display font-bold">Quiz Complete</h2>
+          <div className="bg-card border border-border p-8 rounded-lg text-center space-y-6 animate-in fade-in zoom-in duration-500">
+            <h2 className="text-2xl font-display font-bold">{quizResult?.badge || "Quiz Complete"}</h2>
             <div className="text-6xl font-display font-bold text-primary">
-              {Math.round((score / questions.length) * 100)}%
+              {quizResult?.percentage || Math.round((score / dbQuestions.length) * 100)}%
             </div>
             <p className="text-muted-foreground">
-              You got {score} out of {questions.length} correct
+              You got {quizResult?.score || score} out of {quizResult?.total || dbQuestions.length} correct
             </p>
             <button onClick={resetQuiz} className="px-6 py-3 bg-primary text-primary-foreground rounded-lg font-display font-bold hover:bg-primary/90 transition-all">
               BACK TO MODULES
             </button>
           </div>
         ) : (
-          <div className="bg-card border border-border p-8 rounded-lg relative overflow-hidden">
-            <div className="absolute top-0 left-0 h-1 bg-primary transition-all" style={{ width: `${((currentQ + 1) / questions.length) * 100}%` }} />
+          <div className="bg-card border border-border p-8 rounded-lg relative overflow-hidden animate-in slide-in-from-right-4 duration-300">
+            <div className="absolute top-0 left-0 h-1 bg-primary transition-all" style={{ width: `${((currentQ + 1) / dbQuestions.length) * 100}%` }} />
             <div className="flex justify-between items-center mb-8">
               <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
-                Question {currentQ + 1} of {questions.length}
+                Question {currentQ + 1} of {dbQuestions.length}
               </span>
               <span className="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded">LEVEL: INTERMEDIATE</span>
             </div>
 
-            <h2 className="text-lg font-bold mb-8 leading-relaxed">{questions[currentQ].q}</h2>
+            <h2 className="text-lg font-bold mb-8 leading-relaxed">{dbQuestions[currentQ].question || dbQuestions[currentQ].q}</h2>
 
             <div className="space-y-3">
-              {questions[currentQ].options.map((opt, i) => {
+              {dbQuestions[currentQ].options.map((opt: string, i: number) => {
                 let borderClass = "border-border hover:border-primary hover:bg-primary/5";
+                const isCorrectIndex = dbQuestions[currentQ].correctIndex ?? dbQuestions[currentQ].correct;
                 if (answered) {
-                  if (i === questions[currentQ].correct) borderClass = "border-success bg-success/10";
+                  if (i === isCorrectIndex) borderClass = "border-success bg-success/10";
                   else if (i === selected) borderClass = "border-danger bg-danger/10";
                   else borderClass = "border-border opacity-50";
                 }
@@ -155,8 +207,8 @@ export default function Quiz() {
                     className={`w-full text-left p-4 border rounded-lg transition-all text-sm flex items-center justify-between ${borderClass}`}
                   >
                     {opt}
-                    {answered && i === questions[currentQ].correct && <CheckCircle size={16} className="text-success" />}
-                    {answered && i === selected && i !== questions[currentQ].correct && <XCircle size={16} className="text-danger" />}
+                    {answered && i === isCorrectIndex && <CheckCircle size={16} className="text-success" />}
+                    {answered && i === selected && i !== isCorrectIndex && <XCircle size={16} className="text-danger" />}
                   </button>
                 );
               })}
@@ -167,14 +219,14 @@ export default function Quiz() {
                 onClick={handleNext}
                 className="mt-6 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-display font-bold hover:bg-primary/90 transition-all"
               >
-                {currentQ < questions.length - 1 ? "NEXT QUESTION" : "VIEW RESULTS"}
+                {currentQ < dbQuestions.length - 1 ? "NEXT QUESTION" : "VIEW RESULTS"}
               </button>
             )}
 
             {/* Progress dots */}
             <div className="flex gap-2 mt-6 justify-center">
-              {questions.map((_, i) => (
-                <div key={i} className={`w-2 h-2 rounded-full ${i <= currentQ ? "bg-primary" : "bg-border"}`} />
+              {dbQuestions.map((_, i) => (
+                 <div key={i} className={`w-2 h-2 rounded-full ${i <= currentQ ? "bg-primary" : "bg-border"}`} />
               ))}
             </div>
           </div>
@@ -184,16 +236,16 @@ export default function Quiz() {
       {/* Leaderboard */}
       <div className="space-y-6">
         <div className="bg-card border border-border p-6 rounded-lg">
-          <h3 className="font-display text-sm mb-4">Department Leaderboard</h3>
+          <h3 className="font-display text-sm mb-4">Top Defenders</h3>
           <div className="space-y-4">
-            {leaderboard.map((user, i) => (
+            {dbLeaderboard.map((user, i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="text-lg">{i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}</span>
                 <div className="flex-1">
                   <p className="text-xs font-bold">{user.name}</p>
-                  <p className="text-[10px] text-muted-foreground">{user.dept}</p>
+                  <p className="text-[10px] text-muted-foreground">{user.department || user.dept || "Security"}</p>
                 </div>
-                <span className="font-mono text-xs text-primary font-bold">{user.score}</span>
+                <span className="font-mono text-xs text-primary font-bold">{user.percentage || user.score}%</span>
               </div>
             ))}
           </div>

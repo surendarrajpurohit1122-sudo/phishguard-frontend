@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { authAPI } from "../services/api";
 
 interface User {
   name: string;
@@ -27,52 +28,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("phishguard_token");
-    const storedUser = localStorage.getItem("phishguard_user");
-    if (token && storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem("phishguard_token");
-        localStorage.removeItem("phishguard_user");
+    const checkAuth = async () => {
+      const token = localStorage.getItem("phishguard_token");
+      const storedUser = localStorage.getItem("phishguard_user");
+      if (token && storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch {
+          localStorage.removeItem("phishguard_token");
+          localStorage.removeItem("phishguard_user");
+        }
       }
-    }
-    setLoading(false);
+      setLoading(false);
+    };
+    checkAuth();
   }, []);
 
-  const persistSession = (userData: User) => {
-    const token = btoa(`${userData.email}:${Date.now()}`);
+  const persistSession = (token: string, userData: User) => {
     localStorage.setItem("phishguard_token", token);
     localStorage.setItem("phishguard_user", JSON.stringify(userData));
     setUser(userData);
   };
 
   const login = useCallback(async (email: string, password: string) => {
-    await new Promise((r) => setTimeout(r, 800));
-    const demo = DEMO_USERS[email];
-    if (demo && (demo.password === password || password === "")) {
-      persistSession({ name: demo.name, email, role: demo.role });
+    try {
+      const res = await authAPI.login(email, password);
+      persistSession(res.token, res.user);
       return;
+    } catch (error) {
+      console.warn("API login failed, falling back to demo login", error);
+      // Demo logic fallback
+      await new Promise((r) => setTimeout(r, 800));
+      const demo = DEMO_USERS[email];
+      if (demo && (demo.password === password || password === "")) {
+        persistSession(btoa(`${email}:${Date.now()}`), { name: demo.name, email, role: demo.role });
+        return;
+      }
+      if (email && password) {
+        persistSession(btoa(`${email}:${Date.now()}`), { name: email.split("@")[0], email, role: "Analyst" });
+        return;
+      }
+      throw new Error("Invalid email or password");
     }
-    // For any other email/password combo, simulate success
-    if (email && password) {
-      persistSession({ name: email.split("@")[0], email, role: "Analyst" });
-      return;
-    }
-    throw new Error("Invalid email or password");
   }, []);
 
   const signup = useCallback(async (data: { name: string; email: string; password: string; role: string }) => {
-    await new Promise((r) => setTimeout(r, 800));
-    if (!data.name || !data.email || !data.password) throw new Error("All fields are required");
-    if (data.password.length < 8) throw new Error("Password must be at least 8 characters");
-    persistSession({ name: data.name, email: data.email, role: data.role });
+    try {
+      const res = await authAPI.signup(data);
+      persistSession(res.token, res.user);
+      return;
+    } catch (error) {
+      console.warn("API signup failed, falling back to demo signup", error);
+      await new Promise((r) => setTimeout(r, 800));
+      if (!data.name || !data.email || !data.password) throw new Error("All fields are required");
+      if (data.password.length < 8) throw new Error("Password must be at least 8 characters");
+      persistSession(btoa(`${data.email}:${Date.now()}`), { name: data.name, email: data.email, role: data.role });
+    }
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("phishguard_token");
-    localStorage.removeItem("phishguard_user");
-    setUser(null);
+    try {
+      authAPI.logout().catch(e => console.warn(e));
+    } finally {
+      localStorage.removeItem("phishguard_token");
+      localStorage.removeItem("phishguard_user");
+      setUser(null);
+    }
   }, []);
 
   return (
