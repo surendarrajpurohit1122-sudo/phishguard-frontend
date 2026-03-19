@@ -1,16 +1,51 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ShieldCheck, Loader2 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import toast from "react-hot-toast";
 
 export default function Signup() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("analyst");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const { signup } = useAuth();
+  const navigate = useNavigate();
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!name.trim()) e.name = "Name is required";
+    if (!email.trim()) e.email = "Email is required";
+    if (!password) e.password = "Password is required";
+    else if (password.length < 8) e.password = "Min 8 characters";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      await signup({ name, email, password, role });
+      toast.success("Account created!");
+      navigate("/dashboard");
+    } catch (err: any) {
+      toast.error(err.message || "Signup failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fieldClass = (field: string) =>
+    `w-full mt-1 bg-secondary border rounded-lg px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary ${
+      errors[field] ? "border-destructive" : "border-border"
+    }`;
 
   return (
     <div className="min-h-screen flex">
-      {/* Left branding */}
       <div className="hidden lg:flex w-1/2 bg-card border-r border-border flex-col items-center justify-center p-12 space-y-6">
         <ShieldCheck size={64} className="text-primary" />
         <h1 className="text-4xl font-display font-extrabold tracking-tighter">PHISHGUARD</h1>
@@ -31,9 +66,8 @@ export default function Signup() {
         </div>
       </div>
 
-      {/* Right form */}
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="w-full max-w-sm space-y-8">
+        <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-8">
           <div className="lg:hidden flex items-center gap-2 justify-center mb-8">
             <ShieldCheck size={28} className="text-primary" />
             <span className="font-display font-extrabold text-xl tracking-tighter">PHISHGUARD</span>
@@ -46,61 +80,43 @@ export default function Signup() {
           <div className="space-y-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Full Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full mt-1 bg-secondary border border-border rounded-lg px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary"
-                placeholder="John Doe"
-              />
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={fieldClass("name")} placeholder="John Doe" />
+              {errors.name && <p className="text-xs text-destructive mt-1">{errors.name}</p>}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full mt-1 bg-secondary border border-border rounded-lg px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary"
-                placeholder="john@company.com"
-              />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={fieldClass("email")} placeholder="john@company.com" />
+              {errors.email && <p className="text-xs text-destructive mt-1">{errors.email}</p>}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full mt-1 bg-secondary border border-border rounded-lg px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary"
-                placeholder="••••••••"
-              />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={fieldClass("password")} placeholder="••••••••" />
+              {errors.password && <p className="text-xs text-destructive mt-1">{errors.password}</p>}
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="w-full mt-1 bg-secondary border border-border rounded-lg px-4 py-3 text-sm text-foreground focus:outline-none focus:border-primary"
-              >
+              <select value={role} onChange={(e) => setRole(e.target.value)} className={fieldClass("role")}>
                 <option value="analyst">Security Analyst</option>
                 <option value="admin">Administrator</option>
                 <option value="manager">Team Manager</option>
                 <option value="viewer">Viewer</option>
               </select>
             </div>
-            <Link to="/dashboard">
-              <button className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-display font-bold text-sm hover:bg-primary/90 transition-all mt-2">
-                CREATE ACCOUNT
-              </button>
-            </Link>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full py-3 bg-primary text-primary-foreground rounded-lg font-display font-bold text-sm hover:bg-primary/90 transition-all mt-2 disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {submitting && <Loader2 size={16} className="animate-spin" />}
+              CREATE ACCOUNT
+            </button>
           </div>
 
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{" "}
-            <Link to="/login" className="text-primary hover:underline">
-              Sign in
-            </Link>
+            <Link to="/login" className="text-primary hover:underline">Sign in</Link>
           </p>
-        </div>
+        </form>
       </div>
     </div>
   );

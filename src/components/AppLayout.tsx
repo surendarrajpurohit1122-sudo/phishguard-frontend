@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Globe,
@@ -8,8 +8,10 @@ import {
   Settings,
   Bell,
   ShieldCheck,
+  LogOut,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -46,12 +48,22 @@ const SidebarItem = ({
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const pageTitle = navItems.find((i) => pathname.startsWith(i.href))?.title || "Overview";
 
+  const initials = user?.name
+    ? user.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
+    : "??";
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar */}
       <aside className="w-[220px] fixed h-full border-r border-border bg-card flex flex-col z-20">
         <div className="p-6 flex items-center gap-2">
           <ShieldCheck className="text-primary" size={24} />
@@ -70,20 +82,26 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-border">
+        <div className="p-4 border-t border-border space-y-2">
           <div className="flex items-center gap-3 p-2 rounded-lg bg-secondary">
             <div className="w-8 h-8 rounded bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
-              JD
+              {initials}
             </div>
-            <div className="overflow-hidden">
-              <p className="text-xs font-bold truncate">John Doe</p>
-              <p className="text-[10px] text-muted-foreground truncate">Admin Access</p>
+            <div className="overflow-hidden flex-1">
+              <p className="text-xs font-bold truncate">{user?.name || "User"}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{user?.role || "—"}</p>
             </div>
           </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 w-full px-3 py-2 text-xs text-muted-foreground hover:text-destructive transition-colors rounded-lg hover:bg-destructive/10"
+          >
+            <LogOut size={14} />
+            <span>Logout</span>
+          </button>
         </div>
       </aside>
 
-      {/* Main */}
       <main className="flex-1 ml-[220px]">
         <header className="sticky top-0 z-10 h-16 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-8">
           <h2 className="font-display text-lg font-bold uppercase tracking-tight">{pageTitle}</h2>
